@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Entrance
+Comment=Open Entrance at http://localhost:3000
+Exec=xdg-open http://localhost:3000
+Icon=@ICON_PATH@
+Terminal=false
+Categories=Network;System;
+StartupNotify=true

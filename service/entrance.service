@@ -1,0 +1,15 @@
+[Unit]
+Description=Entrance Web UI
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=@INSTALL_DIR@
+Environment="PATH=@PATH_VALUE@"
+ExecStart=/usr/bin/env bash -lc 'export ENTRANCE_DATA_DIR="$(pwd)/.data"; export AUTH_SECRET="$(tr -d '\''\n'\'' < ./.data/auth_secret)"; exec npm start'
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
