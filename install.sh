@@ -10,15 +10,20 @@ LATEST_RELEASE_API="https://api.github.com/repos/${REPO_SLUG}/releases/latest"
 
 INSTALL_DIR="${HOME}/.entrance"
 DATA_DIR="${INSTALL_DIR}/.data"
-SERVICE_NAME="entrance.service"
+DEFAULT_SERVICE_NAME="entrance.service"
+NOCORS_SERVICE_NAME="entrance-nocors.service"
 DESKTOP_NAME="entrance.desktop"
 SYSTEMD_USER_DIR="${HOME}/.config/systemd/user"
 DESKTOP_DIR="${HOME}/.local/share/applications"
-SERVICE_TEMPLATE="${SCRIPT_DIR}/service/${SERVICE_NAME}"
+DEFAULT_SERVICE_TEMPLATE="${SCRIPT_DIR}/service/${DEFAULT_SERVICE_NAME}"
+NOCORS_SERVICE_TEMPLATE="${SCRIPT_DIR}/service/${NOCORS_SERVICE_NAME}"
 DESKTOP_TEMPLATE="${SCRIPT_DIR}/service/${DESKTOP_NAME}"
-INSTALLED_SERVICE="${SYSTEMD_USER_DIR}/${SERVICE_NAME}"
+DEFAULT_INSTALLED_SERVICE="${SYSTEMD_USER_DIR}/${DEFAULT_SERVICE_NAME}"
+NOCORS_INSTALLED_SERVICE="${SYSTEMD_USER_DIR}/${NOCORS_SERVICE_NAME}"
 INSTALLED_DESKTOP="${DESKTOP_DIR}/${DESKTOP_NAME}"
 APP_URL="http://localhost:3000"
+COMMAND="install"
+ENABLE_NOCORS=0
 
 require_cmd() {
     local cmd="$1"
@@ -131,12 +136,27 @@ render_template() {
         "${src}" > "${dest}"
 }
 
-install_service() {
+resolve_enabled_service_name() {
+    if [[ "${ENABLE_NOCORS}" -eq 1 ]]; then
+        printf '%s\n' "${NOCORS_SERVICE_NAME}"
+        return 0
+    fi
+
+    printf '%s\n' "${DEFAULT_SERVICE_NAME}"
+}
+
+install_services() {
+    local enabled_service_name="$1"
+
     mkdir -p "${SYSTEMD_USER_DIR}"
-    render_template "${SERVICE_TEMPLATE}" "${INSTALLED_SERVICE}"
+    render_template "${DEFAULT_SERVICE_TEMPLATE}" "${DEFAULT_INSTALLED_SERVICE}"
+    render_template "${NOCORS_SERVICE_TEMPLATE}" "${NOCORS_INSTALLED_SERVICE}"
 
     systemctl --user daemon-reload
-    systemctl --user enable --now "${SERVICE_NAME}"
+
+    systemctl --user disable --now "${DEFAULT_SERVICE_NAME}" >/dev/null 2>&1 || true
+    systemctl --user disable --now "${NOCORS_SERVICE_NAME}" >/dev/null 2>&1 || true
+    systemctl --user enable --now "${enabled_service_name}"
 }
 
 install_desktop_entry() {
@@ -149,16 +169,16 @@ install_desktop_entry() {
     fi
 }
 
-stop_service_if_present() {
-    if [[ -f "${INSTALLED_SERVICE}" ]]; then
-        systemctl --user disable --now "${SERVICE_NAME}" >/dev/null 2>&1 || true
-        systemctl --user daemon-reload
-    fi
+stop_services_if_present() {
+    systemctl --user disable --now "${DEFAULT_SERVICE_NAME}" >/dev/null 2>&1 || true
+    systemctl --user disable --now "${NOCORS_SERVICE_NAME}" >/dev/null 2>&1 || true
+    systemctl --user daemon-reload
 }
 
 uninstall_app() {
-    stop_service_if_present
-    rm -f "${INSTALLED_SERVICE}"
+    stop_services_if_present
+    rm -f "${DEFAULT_INSTALLED_SERVICE}"
+    rm -f "${NOCORS_INSTALLED_SERVICE}"
     rm -f "${INSTALLED_DESKTOP}"
     rm -rf "${INSTALL_DIR}"
 
@@ -167,12 +187,19 @@ uninstall_app() {
         update-desktop-database "${DESKTOP_DIR}" >/dev/null 2>&1 || true
     fi
 
-    printf 'Removed %s, %s, and %s.\n' "${INSTALL_DIR}" "${INSTALLED_SERVICE}" "${INSTALLED_DESKTOP}"
+    printf 'Removed %s, %s, %s, and %s.\n' \
+        "${INSTALL_DIR}" \
+        "${DEFAULT_INSTALLED_SERVICE}" \
+        "${NOCORS_INSTALLED_SERVICE}" \
+        "${INSTALLED_DESKTOP}"
 }
 
 install_app() {
+    local enabled_service_name
     local release_json version release_page archive_url archive_name
     local temp_dir archive_path extract_dir
+
+    enabled_service_name="$(resolve_enabled_service_name)"
 
     release_json="$(latest_release_json)"
     version="$(json_string_field "${release_json}" "tag_name")"
@@ -197,13 +224,14 @@ install_app() {
     extract_release_archive "${archive_path}" "${extract_dir}"
     ensure_runtime_data
     install_dependencies
-    install_service
+    install_services "${enabled_service_name}"
     install_desktop_entry
 
     rm -rf "${temp_dir}"
 
     printf 'Installed to %s\n' "${INSTALL_DIR}"
-    printf 'Service: systemctl --user status %s\n' "${SERVICE_NAME}"
+    printf 'Installed services: %s, %s\n' "${DEFAULT_INSTALLED_SERVICE}" "${NOCORS_INSTALLED_SERVICE}"
+    printf 'Enabled service: systemctl --user status %s\n' "${enabled_service_name}"
     printf 'Desktop entry: %s\n' "${INSTALLED_DESKTOP}"
     printf 'Open: %s\n' "${APP_URL}"
 }
@@ -211,14 +239,55 @@ install_app() {
 usage() {
     cat <<'EOF'
 Usage:
-  ./install.sh install
+  ./install.sh [install] [--nocors]
   ./install.sh uninstall
+
+Options:
+  --nocors    Install both services, but enable entrance-nocors.service
 EOF
 }
 
+parse_args() {
+    local command_seen=0
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            install|uninstall)
+                if [[ "${command_seen}" -eq 1 ]]; then
+                    printf 'Only one command may be specified.\n' >&2
+                    usage
+                    exit 1
+                fi
+                COMMAND="$1"
+                command_seen=1
+                ;;
+            --nocors)
+                ENABLE_NOCORS=1
+                ;;
+            -h|--help)
+                usage
+                exit 0
+                ;;
+            *)
+                printf 'Unknown argument: %s\n' "$1" >&2
+                usage
+                exit 1
+                ;;
+        esac
+        shift
+    done
+}
+
 main() {
-    if [[ ! -f "${SERVICE_TEMPLATE}" ]]; then
-        printf 'Missing service template: %s\n' "${SERVICE_TEMPLATE}" >&2
+    parse_args "$@"
+
+    if [[ ! -f "${DEFAULT_SERVICE_TEMPLATE}" ]]; then
+        printf 'Missing service template: %s\n' "${DEFAULT_SERVICE_TEMPLATE}" >&2
+        exit 1
+    fi
+
+    if [[ ! -f "${NOCORS_SERVICE_TEMPLATE}" ]]; then
+        printf 'Missing service template: %s\n' "${NOCORS_SERVICE_TEMPLATE}" >&2
         exit 1
     fi
 
@@ -227,7 +296,7 @@ main() {
         exit 1
     fi
 
-    case "${1:-}" in
+    case "${COMMAND}" in
         install)
             require_cmd bash
             require_cmd curl

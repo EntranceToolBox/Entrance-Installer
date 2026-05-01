@@ -5,12 +5,12 @@ Bash installer for [Entrance](https://github.com/fcanlnony/Entrance).
 This repository provides:
 
 - `install.sh` to install or uninstall Entrance for the current user
-- a `systemd --user` service template in `service/entrance.service`
+- `systemd --user` service templates in `service/entrance.service` and `service/entrance-nocors.service`
 - a desktop entry template in `service/entrance.desktop`
 
 ## What It Does
 
-`./install.sh install` will:
+`./install.sh` or `./install.sh install` will:
 
 - query the latest GitHub release for `fcanlnony/Entrance`
 - prefer a `*.tar.xz` release asset when present
@@ -19,13 +19,16 @@ This repository provides:
 - create `~/.entrance/.data`
 - create `~/.entrance/.data/auth_secret` if it does not already exist
 - install Node.js dependencies with `npm ci --omit=dev` or `npm install --omit=dev`
-- install and start a user service at `~/.config/systemd/user/entrance.service`
+- install both user services at `~/.config/systemd/user/entrance.service` and `~/.config/systemd/user/entrance-nocors.service`
+- enable and start `entrance.service` by default
 - install a desktop entry at `~/.local/share/applications/entrance.desktop`
+
+`./install.sh --nocors` will do the same installation, but enable and start `entrance-nocors.service` instead.
 
 `./install.sh uninstall` will:
 
-- stop and disable the user service
-- remove the user service file
+- stop and disable both user services
+- remove both user service files
 - remove the desktop entry
 - remove `~/.entrance`
 
@@ -34,7 +37,7 @@ This repository provides:
 - Install directory: `~/.entrance`
 - Data directory: `~/.entrance/.data`
 - Auth secret file: `~/.entrance/.data/auth_secret`
-- User service file: `~/.config/systemd/user/entrance.service`
+- User service files: `~/.config/systemd/user/entrance.service`, `~/.config/systemd/user/entrance-nocors.service`
 - Desktop file: `~/.local/share/applications/entrance.desktop`
 - Desktop icon path: `~/.entrance/public/logo.png`
 
@@ -67,7 +70,13 @@ Optional:
 Install:
 
 ```bash
-./install.sh install
+./install.sh
+```
+
+Install with CORS disabled:
+
+```bash
+./install.sh --nocors
 ```
 
 Uninstall:
@@ -80,18 +89,21 @@ Check service status:
 
 ```bash
 systemctl --user status entrance.service
+systemctl --user status entrance-nocors.service
 ```
 
 Restart the service:
 
 ```bash
 systemctl --user restart entrance.service
+systemctl --user restart entrance-nocors.service
 ```
 
 View logs:
 
 ```bash
 journalctl --user -u entrance.service -f
+journalctl --user -u entrance-nocors.service -f
 ```
 
 ## Notes
